@@ -83,23 +83,28 @@ def io_handler(file_queue, methylation_queue, methylation_read_number, bams_anal
             # ignoring secondary and supplementary alignments 
             if not alignment.is_secondary | alignment.is_supplementary:
                 if alignment.mapping_quality >= 10:
+                    print("good alignment")                    
                     # collect relevant alignment data 
+                    #print(alignm)
                     alignm[alignment.qname].append(
                         (
                             alignment.reference_name,
                             alignment.get_aligned_pairs(),
                             alignment.modified_bases,
                             alignment.is_reverse,
-                            alignment.get_tag('st'),
-                            alignment.get_tag('RG'),
-                            alignment.get_tag('rn'),
+                            #alignment.get_tag('st'),
+                            #alignment.get_tag('RG'),
+                            #alignment.get_tag('rn'),
                             alignment.qname,
-                            alignment.get_tag('qs'),
+                            #alignment.get_tag('qs'),
                             alignment.infer_read_length(),
                             alignment.mapping_quality
                         )
                     )
+                    print(f"NOW align length {alignm[alignment.qname]}")
+            print("finshed alignment")
         if alignm:
+            print("found align")
             # conerting alignment data into panda df 
             methyl_alignments = pd.concat({k: pd.DataFrame(v) for k, v in alignm.items()})
             methyl_alignments.index.names = ['read_id', 'num_alignments']
@@ -113,9 +118,12 @@ def io_handler(file_queue, methylation_queue, methylation_read_number, bams_anal
             # split the data into chunks for parallel processing 
             ti = np.array_split(bc, 4)
             for t in ti:
+                print("putting methyl data into queue")
                 methylation_queue.put(t)
                 with methylation_read_number.get_lock():
                     methylation_read_number.value += len(t.index)
+        else:
+            print("No alignments found in BAM file:", bamfile)
         bam.close()
         with bams_analysed.get_lock():
             bams_analysed.value += 1
@@ -135,6 +143,7 @@ def methylation_reader(methylation_queue, methylation_list, sites_set, finished,
         data = methylation_queue.get()
 
         if data is None:
+            print("No more data to process, exiting methylation reader.")
             time.sleep(1)
             with finished.get_lock():
                 finished.value += 1
@@ -142,6 +151,7 @@ def methylation_reader(methylation_queue, methylation_list, sites_set, finished,
 
         # iterate over rows in data chunk
         for idx, read_row in data.iterrows():
+            print("Processing read:", read_row[0])
             with methylation_read_number_analysed.get_lock():
                 methylation_read_number_analysed.value += 1
 
